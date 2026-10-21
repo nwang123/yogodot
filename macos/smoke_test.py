@@ -78,9 +78,9 @@ def main():
             try:
                 result = wait_for(Path(tmp) / "smoke-result.json", process, timeout=35)
                 process.wait(timeout=10)
-                assert result.get("designs") == 80, result
-                assert result.get("cards") == 80, result
-                assert result.get("newDesigns") == 32, result
+                assert result.get("designs") == 100, result
+                assert result.get("cards") == 100, result
+                assert result.get("newDesigns") == 52, result
                 assert result.get("mac") is True and result.get("ticks", 0) >= 30, result
                 print("Native app / hidden WKWebView:", json.dumps(result, ensure_ascii=False))
             finally:

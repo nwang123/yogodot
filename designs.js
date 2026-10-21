@@ -39,5 +39,5 @@ const DESIGNS = {
 };
 
 const extra = require('./patterns.js');
-const EXTRA_PALETTE = {A:[125,228,248], G:[115,238,125], n:[118,52,32], s:[62,62,74]};
-module.exports = { PALETTE:{...PALETTE, ...EXTRA_PALETTE}, DESIGNS:{...DESIGNS, ...extra.designs} };
+const EXTRA_PALETTE = {a:[0,190,240], A:[125,228,248], G:[115,238,125], n:[118,52,32], s:[62,62,74]};
+module.exports = { PALETTE:{...PALETTE, ...EXTRA_PALETTE, ...extra.palette}, DESIGNS:{...DESIGNS, ...extra.designs} };

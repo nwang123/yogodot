@@ -127,9 +127,13 @@ class PatternTests(unittest.TestCase):
     def test_all_new_patterns_are_valid_unique_six_by_six(self):
         text = (ROOT / "patterns.js").read_text()
         entries = re.findall(r'^      (\w+): (\[[^\n]+\])', text, re.M)
-        self.assertEqual(len(entries), 32)
+        self.assertEqual(len(entries), 52)
+        palette_extension = json.loads(re.search(r'const palette = (\{.*?\});', text, re.S).group(1))
+        for rgb in palette_extension.values():
+            self.assertEqual(len(rgb), 3)
+            self.assertTrue(all(isinstance(v, int) and 0 <= v <= 255 for v in rgb))
         seen = set()
-        palette = set(".roygcbpvwdkAaAlsSOnmYGetLB")
+        palette = set(".roygcbpvwdkAaAlsSOnmYGetLB") | set(palette_extension)
         for name, raw in entries:
             rows = json.loads(raw)
             self.assertEqual(len(rows), 6, name)
@@ -141,6 +145,7 @@ class PatternTests(unittest.TestCase):
         page = (ROOT / "yogo.html").read_text()
         self.assertLess(page.index('src="patterns.js"'), page.index('const STATICS='))
         self.assertIn('...YOGO_PATTERNS.designs', page)
+        self.assertIn('...YOGO_PATTERNS.palette', page)
 
 
 if __name__ == "__main__":

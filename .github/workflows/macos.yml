@@ -56,5 +56,5 @@ jobs:
           if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release upload "$release_tag" packages/*.zip --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$release_tag" packages/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "YogoDot macOS $release_tag" --notes "macOS 13+. Download arm64 for Apple Silicon or x86_64 for Intel. 32 new pixel designs (80 total). Ad-hoc signed; not notarized. Real keyboard verification is pending. See README for setup and limitations."
+            gh release create "$release_tag" packages/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "YogoDot macOS $release_tag" --notes-file macos/RELEASE_NOTES.md
           fi

@@ -7,10 +7,14 @@ ATK YOGO 75 PRO（YOGO 75）点阵屏与背光控制工具的 macOS 移植版。
 
 - 原生 macOS 菜单栏应用和控制窗口，无需 Chrome，也不依赖 WebHID。
 - HIDAPI 通过 USB / 2.4G 接收器控制键盘，保留原协议、发送限速、画面去重及配置备份。
-- 新增 **32 张原创 6×6 像素图案**：太空漫游、天气四季、零食时间、日常小物各 8 张；加上原有 48 张，共 **80 张**。图案可与主题背光搭配，选择会保存在本机。
+- 新增 **52 张原创 6×6 像素图案**：未来信号 12 张、金渐层猫咪 8 张，另有太空漫游、天气四季、零食时间、日常小物各 8 张；加上原有 48 张，共 **100 张**。图案可与主题背光搭配，选择会保存在本机。
 - 保留 24 套主题、动画、番茄钟、专注模式、电量显示。
 - 关闭窗口后驻留菜单栏，可手动开启「登录时启动」。锁屏、系统睡眠与空闲时熄灯，恢复后补推。
 - 设置、日志和备份存入 `~/Library/Application Support/YogoDot`，不会写进应用包。
+
+金渐层系列使用金色渐变毛发、浅奶油色口鼻、绿色眼睛和粉色鼻子；未来系列以青蓝与霓虹紫为主。
+
+![未来感与金渐层猫咪图案预览](docs/patterns-1.0.1.png)
 
 ## 下载与使用
 
@@ -58,6 +62,6 @@ Windows 入口仍为 `yogo.pyw`，构建脚本仍为 `build.cmd`。新增图库�
 
 ## English
 
-A macOS port of [Wednesque's YogoDot](https://github.com/Wednesque/yogodot) for the ATK YOGO 75 PRO keyboard. Includes a native Swift menu bar / WKWebView shell, a shared Python protocol engine with a macOS HIDAPI transport, and 32 new original 6×6 designs (80 total). macOS 13+, USB or 2.4 GHz only. Build with `./build-macos.sh`; architecture-specific standalone apps are produced by CI. Releases are ad-hoc signed, not notarized. Real keyboard validation remains pending. See the limitations above and [macOS notes](macos/README.md).
+A macOS port of [Wednesque's YogoDot](https://github.com/Wednesque/yogodot) for the ATK YOGO 75 PRO keyboard. Includes a native Swift menu bar / WKWebView shell, a shared Python protocol engine with a macOS HIDAPI transport, and 52 new original 6×6 designs (100 total), including 12 futuristic signals and 8 golden shaded cat designs. macOS 13+, USB or 2.4 GHz only. Build with `./build-macos.sh`; architecture-specific standalone apps are produced by CI. Releases are ad-hoc signed, not notarized. Real keyboard validation remains pending. See the limitations above and [macOS notes](macos/README.md).
 
 MIT License. Original project copyright retained in [LICENSE](LICENSE).
