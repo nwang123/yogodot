@@ -34,12 +34,13 @@ jobs:
           name: YogoDot-macos-${{ matrix.arch }}
           path: dist/YogoDot-macos-${{ matrix.arch }}.zip
   release:
-    if: startsWith(github.ref, 'refs/tags/mac-v')
+    if: startsWith(github.ref, 'refs/tags/mac-v') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && contains(github.event.head_commit.message, '[release mac]'))
     needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           merge-multiple: true
@@ -48,8 +49,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$GITHUB_REF_NAME" packages/*.zip --repo "$GITHUB_REPOSITORY" --clobber
+          release_tag="$GITHUB_REF_NAME"
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            release_tag="mac-v$(cat macos/VERSION)"
+          fi
+          if gh release view "$release_tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$release_tag" packages/*.zip --repo "$GITHUB_REPOSITORY" --clobber
           else
-            gh release create "$GITHUB_REF_NAME" packages/*.zip --repo "$GITHUB_REPOSITORY" --prerelease --title "YogoDot macOS $GITHUB_REF_NAME" --notes "macOS 13+. Download arm64 for Apple Silicon or x86_64 for Intel. 32 new pixel designs (80 total). Ad-hoc signed; not notarized. Real keyboard verification is pending. See README for setup and limitations."
+            gh release create "$release_tag" packages/*.zip --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --title "YogoDot macOS $release_tag" --notes "macOS 13+. Download arm64 for Apple Silicon or x86_64 for Intel. 32 new pixel designs (80 total). Ad-hoc signed; not notarized. Real keyboard verification is pending. See README for setup and limitations."
           fi

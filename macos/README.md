@@ -31,7 +31,7 @@ python3 -m venv .buildenv
 
 测试使用临时数据目录和模拟 HID，不会向真实键盘发送测试图案或改动本机登录启动。`YOGO_DATA_DIR` 可用于隔离开发数据；正常运行时不必设置。
 
-构建产物采用临时签名，可验证完整性，但不能替代 Developer ID 与 Apple 公证。发布工作流使用固定版本的 Python 依赖，将两种架构的应用分别打包为 zip。
+构建产物采用临时签名，可验证完整性，但不能替代 Developer ID 与 Apple 公证。发布工作流使用固定版本的 Python 依赖，将两种架构的应用分别打包为 zip。推送 `mac-v*` 标签可发布预览版；也可更新 `macos/VERSION`，在 main 分支提交说明中加入 `[release mac]`，由构建流程创建对应标签与下载页。
 
 ## 实机验收（尚待完成）
 
