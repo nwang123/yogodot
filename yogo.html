@@ -14,6 +14,7 @@
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--ink);color:var(--text);font-family:var(--ui);font-size:14px;line-height:1.55}
+  .brightness-value{width:58px;min-width:0;box-sizing:border-box;background:#141019;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:5px;text-align:right;font:inherit;font-size:12px}
   .wrap{max-width:1080px;margin:0 auto;padding:22px 20px 48px}
   header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;
     padding-bottom:14px;border-bottom:1px solid var(--line)}
@@ -130,15 +131,16 @@
       <div style="margin-top:16px;display:flex;flex-direction:column;gap:9px">
         <label class="row" style="gap:9px">
           <span style="color:var(--dim2);font-size:12.5px;width:52px">点阵屏</span>
-          <input type="range" id="dotBr" min="5" max="100" step="5" style="flex:1;accent-color:var(--accent)">
-          <span class="metric" id="dotBrV" style="width:38px;margin:0"></span>
+          <input type="range" id="dotBr" min="0" max="100" step="1" aria-label="点阵屏亮度" style="flex:1;min-width:0;accent-color:var(--accent)">
+          <input type="number" id="dotBrV" min="0" max="100" step="1" aria-label="点阵屏亮度百分比" class="brightness-value"><span class="metric" style="margin:0">%</span>
         </label>
         <label class="row" style="gap:9px">
           <span style="color:var(--dim2);font-size:12.5px;width:52px">键盘灯</span>
-          <input type="range" id="kbBr" min="5" max="100" step="5" style="flex:1;accent-color:var(--accent)">
-          <span class="metric" id="kbBrV" style="width:38px;margin:0"></span>
+          <input type="range" id="kbBr" min="0" max="100" step="1" aria-label="键盘灯亮度" style="flex:1;min-width:0;accent-color:var(--accent)">
+          <input type="number" id="kbBrV" min="0" max="100" step="1" aria-label="键盘灯亮度百分比" class="brightness-value"><span class="metric" style="margin:0">%</span>
         </label>
       </div>
+      <p style="color:var(--dim2);font-size:12px;margin:8px 0 0">两路亮度独立设置，0% 即全灭</p>
       <details style="margin-top:14px">
         <summary style="color:var(--dim2);font-size:12.5px;cursor:pointer">键盘灯白平衡</summary>
         <div style="display:flex;flex-direction:column;gap:7px;margin-top:9px">
@@ -467,13 +469,9 @@ async function pushMatrix(rgb){
   catch(e){ lastErr=String(e && e.message || e).slice(0,120); throw e; }
 }
 async function _pushMatrix(rgb){
-  const flat=[], k=DOT_BRIGHT/100;
-  /* 点阵屏默认走原始意图色 —— 实测它的混色本来就准，套键盘那套校正反而搞坏。
-     GAIN_DOT 勾上才同时应用饱和校正和通道增益。 */
-  for(const row of rgb) for(const p1 of row){ const px=GAIN_DOT?gr(ledize(p1)):p1;
-    flat.push(clamp(px[0]*k),clamp(px[1]*k),clamp(px[2]*k)); }
-  await kbCall("/kb/matrix",{rgb:flat});
-  frames++; pushOK++; lastErr=""; drawPreview(rgb);
+  const frame=matrixFrame(rgb);
+  await kbCall("/kb/matrix",{rgb:frame.flat(2)});
+  frames++; pushOK++; lastErr=""; drawPreview(frame);
 }
 
 /* ═══════════════ 键盘背光逐键推流 ═══════════════
@@ -491,8 +489,26 @@ const KB_MAP=[
 ];
 const KB_N=84, BL_STREAM=254, C_SYNCLED=46, C_ENDSYNC=47;
 /* 亮度走软件缩放：推流是 RAM，改一下立刻生效，且完全不写 flash */
-let KB_BRIGHT=+(localStorage.getItem("yogo_kbbr")||70);
-let DOT_BRIGHT=+(localStorage.getItem("yogo_dotbr")||50);   // 默认压到一半：LED 电流跟亮度基本线性
+function brightnessPercent(value, fallback=0){
+  if(value==null || String(value).trim()==="") return fallback;
+  const n=Number(value);
+  return Number.isFinite(n) ? Math.max(0,Math.min(100,Math.round(n))) : fallback;
+}
+function storedBrightness(key, fallback){
+  return brightnessPercent(localStorage.getItem(key), fallback);
+}
+let KB_BRIGHT=storedBrightness("yogo_kbbr",70);
+let DOT_BRIGHT=storedBrightness("yogo_dotbr",50);
+let LAST_KB_BRIGHT=storedBrightness("yogo_kbbr_last",70)||70;
+if(KB_BRIGHT>0) LAST_KB_BRIGHT=KB_BRIGHT;
+// Migrate the former separate off switch into the single 0–100% setting.
+if(localStorage.getItem("yogo_kboff")==="1"){
+  if(KB_BRIGHT>0) LAST_KB_BRIGHT=KB_BRIGHT;
+  KB_BRIGHT=0;
+  localStorage.setItem("yogo_kbbr","0");
+  localStorage.setItem("yogo_kbbr_last",String(LAST_KB_BRIGHT));
+}
+localStorage.removeItem("yogo_kboff");
 /* 通道增益（白平衡）。这批灯珠绿、蓝的发光效率明显高于红，
    等值混合时红被压过去 —— 黄看着像绿、青看着像蓝。压低 G/B 把红拉回来。 */
 let GAIN=(()=>{ try{ const v=JSON.parse(localStorage.getItem("yogo_gain"));
@@ -559,23 +575,38 @@ function ledize(c){
 let GAIN_DOT=false;
 try{ localStorage.removeItem("yogo_gaindot"); }catch(e){}
 let RAW=false;                          // 校准时绕过饱和/增益，直接送原始值
-let KB_OFF=localStorage.getItem("yogo_kboff")==="1";   // 只亮点阵屏：键盘灯全熄，屏照常
 /* 原厂灯效：把背光模式写成 0-20 中的一个，交给固件自己跑，颜色也用它自带的。
    点阵屏走命令 59，是完全独立的通道，所以「原厂灯光 + 我们的点阵屏」可以并存。
    为 null 时才走我们自己的逐键推流（模式 254）。 */
 let FW_FX=(()=>{ const v=localStorage.getItem("yogo_fwfx");
   return (v===null||v==="") ? null : +v; })();   // 只亮点阵屏：键盘灯全熄，屏照常
+function matrixFrame(rgb){
+  // Scale only this channel; retain the unscaled artwork for the next change.
+  return rgb.map(row=>row.map(color=>{
+    const px=GAIN_DOT ? gr(ledize(color)) : color;
+    return px.map(v=>clamp(v*DOT_BRIGHT/100));
+  }));
+}
+function keyboardFrame(arr){
+  return Array.from({length:KB_N},(_,i)=>{
+    const color=arr[i]||[0,0,0];
+    const px=RAW ? color : gr(ledize(color));
+    return px.map(v=>clamp(v*KB_BRIGHT/100));
+  });
+}
 async function pushKeys(arr){
-  if(FW_FX!=null||KB_OFF){ drawKeyboard(new Array(KB_N).fill([0,0,0])); return; }  // 交给固件 / 已关，一个字节都不发
-  const p=[], k=KB_BRIGHT/100;
-  for(let i=0;i<KB_N;i++){
-    const c=RAW ? (arr[i]||[0,0,0]) : gr(ledize(arr[i]||[0,0,0]));
-    const R=clamp(c[0]*k), G=clamp(c[1]*k), B=clamp(c[2]*k);
-    const v=((R>>3&31)<<11)|((G>>2&63)<<5)|(B>>3&31);
+  if(FW_FX!=null || KB_BRIGHT===0 || MODE==="focus"){
+    drawKeyboard(new Array(KB_N).fill([0,0,0])); return;
+  }
+  const p=[], frame=keyboardFrame(arr);
+  for(const [R,G,B] of frame){
+    // RGB565 has coarser steps than percentages: keep a lit channel visible at 1%.
+    const r=R>0 ? Math.max(1,R>>3) : 0, g=G>0 ? Math.max(1,G>>2) : 0, b=B>0 ? Math.max(1,B>>3) : 0;
+    const v=(r<<11)|(g<<5)|b;
     p.push(v&255, (v>>8)&255);
   }
   await kbCall("/kb/keys",{rgb565:p});
-  drawKeyboard(arr);
+  drawKeyboard(frame);
 }
 const stopKeys=()=>kbCall("/kb/stopkeys").catch(()=>{});
 /** 6×16 字符画 -> 84 个 RGB。空位自动跳过。 */
@@ -593,8 +624,6 @@ async function attach(info){
   dev={opened:true, productName:info.product||"ATK YOGO 75 PRO Dongle"};
   $("dot").classList.add("on"); $("stat").textContent=dev.productName;
   $("conn").textContent="重新连接";
-  try{ await patchConfig({dsMode:DS_CUSTOM, dsBright:75}); }
-  catch(e){ lastErr="首帧配置失败: "+String(e&&e.message||e).slice(0,90); }
   try{ await ensureSleep(); }catch(e){}
   lightNow=null;                                  // 重连后强制重发一次背光
   streamOn=null;
@@ -1680,6 +1709,7 @@ async function showStatic(rgb){ stopAnim(); try{ await pushMatrix(rgb); }catch(e
 
 /* 背光走推流：进一次流式模式（一次 flash 写），之后全部是 RAM，随便刷 */
 let streamOn=null, lightNow=null;
+let streamTask=Promise.resolve();
 /* 键盘没应答时把话说明白 —— 之前是静悄悄什么都不做，看着就像软件坏了 */
 function markAsleep(){
   awake=false;
@@ -1720,18 +1750,30 @@ async function refreshBatt(){
 setInterval(refreshBatt, 20000);
 refreshBatt();
 
-async function enterStreamMode(){
-  /* 熄灭 = 写背光模式 0，让固件把 LED 驱动真的关掉。
-     以前只在原厂灯效下才写 0，我们自己的推流模式下「熄灭」只是推一帧全黑继续流着 ——
-     灯是黑的，驱动和推流态都还醒着，电照样掉。 */
-  const want = KB_OFF ? 0 : FW_FX==null ? BL_STREAM : FW_FX;
-  if(streamOn===want) return true;
-  try{ await patchConfig({ blMode:want, blBright:90,
-         blColorful: FW_FX==null?0:1,               // 原厂灯效放开彩色，用它自带的配色
-         dsMode:DS_CUSTOM, dsBright:90 });
-       streamOn=want; return true; }
-  catch(e){ lastErr="进流模式失败: "+String(e&&e.message||e).slice(0,90);
-            markAsleep(); return false; }
+function streamConfig(){
+  const focused=MODE==="focus", keysOff=KB_BRIGHT===0 || focused;
+  return {blMode:keysOff ? 0 : FW_FX==null ? BL_STREAM : FW_FX,
+          blBright:keysOff ? 0 : FW_FX==null ? 90 : KB_BRIGHT,
+          blColorful:FW_FX==null ? 0 : 1,
+          dsMode:DS_CUSTOM, dsBright:DOT_BRIGHT===0 || focused ? 0 : 90};
+}
+function enterStreamMode(){
+  // Serialize configuration writes and read the latest settings when queued work
+  // starts. The cache includes each channel's off/brightness state, not just mode.
+  const task=streamTask.then(async()=>{
+    const config=streamConfig(), signature=JSON.stringify(config);
+    if(streamOn===signature) return true;
+    try{
+      await patchConfig(config);
+      streamOn=signature; return true;
+    }catch(e){
+      streamOn=null;
+      lastErr="进流模式失败: "+String(e&&e.message||e).slice(0,90);
+      markAsleep(); return false;
+    }
+  });
+  streamTask=task;
+  return task;
 }
 /** 整块铺一个颜色（vibe 状态、番茄钟底色用），零 flash 写入 */
 async function setLight(color, bright){
@@ -2041,19 +2083,60 @@ $("dynBtn").addEventListener("click", ()=>{
   syncDynBtn(); if(MODE==="theme") applyTheme(THEME); });
 syncDynBtn();
 
-/* 亮度滑杆 —— 软件缩放，拖动即时生效 */
+/* 两路独立亮度：0–100%，滑杆与数字输入共享同一份状态。 */
 function repaintNow(){
-  if(MODE==="theme") applyTheme(THEME);
-  else if(MODE==="vibe") vibePaint();
-  else if(MODE==="focus") applyMode("focus");
-  else if(MODE==="pomodoro") applyMode("pomodoro");
+  if(MODE==="theme") return applyTheme(THEME);
+  if(MODE==="vibe") return vibePaint();
+  if(MODE==="focus") return applyMode("focus");
+  if(MODE==="pomodoro") return applyMode("pomodoro");
 }
-[["dotBr","dotBrV","yogo_dotbr",v=>DOT_BRIGHT=v,()=>DOT_BRIGHT],
- ["kbBr","kbBrV","yogo_kbbr", v=>KB_BRIGHT=v, ()=>KB_BRIGHT]].forEach(([id,lab,key,set,get])=>{
-  const el=$(id); el.value=String(get()); $(lab).textContent=get()+"%";
-  el.addEventListener("input", ()=>{ set(+el.value); $(lab).textContent=el.value+"%";
-    localStorage.setItem(key, el.value); });
-  el.addEventListener("change", repaintNow);
+function brightnessPreview(){
+  const rows=ART_PICK && STATICS[ART_PICK.name] ? STATICS[ART_PICK.name] : THEMES[THEME].dot;
+  drawPreview(MODE==="focus" ? blank() : matrixFrame(rows2rgb(rows)));
+  drawKeyboard(MODE==="focus" ? new Array(KB_N).fill([0,0,0]) : keyboardFrame(THEMES[THEME].kb(0)));
+}
+async function applyBrightness(){
+  lightNow=null; vibeKb=null; vibeSig=null;
+  if(!dev){ brightnessPreview(); return; }
+  if(!await enterStreamMode()) return;
+  if(calTest) await paintCal();
+  else await repaintNow();
+}
+let brightnessTimer=null;
+function scheduleBrightness(immediate=false){
+  if(brightnessTimer!==null) clearTimeout(brightnessTimer);
+  brightnessTimer=setTimeout(()=>{
+    brightnessTimer=null;
+    return applyBrightness().catch(e=>{lastErr=String(e&&e.message||e).slice(0,120);});
+  },immediate ? 0 : 120);
+}
+const BRIGHTNESS_CONTROLS=[
+  {id:"dot",range:"dotBr",number:"dotBrV",key:"yogo_dotbr",get:()=>DOT_BRIGHT,set:v=>DOT_BRIGHT=v},
+  {id:"kb",range:"kbBr",number:"kbBrV",key:"yogo_kbbr",get:()=>KB_BRIGHT,set:v=>KB_BRIGHT=v}
+];
+function updateBrightness(id, value){
+  const control=BRIGHTNESS_CONTROLS.find(c=>c.id===id);
+  const v=brightnessPercent(value,control.get());
+  control.set(v);
+  $(control.range).value=$(control.number).value=String(v);
+  localStorage.setItem(control.key,String(v));
+  if(id==="kb" && v>0){
+    LAST_KB_BRIGHT=v; localStorage.setItem("yogo_kbbr_last",String(v));
+  }
+  syncKbOff();
+  scheduleBrightness(v===0);
+}
+BRIGHTNESS_CONTROLS.forEach(control=>{
+  const slider=$(control.range), number=$(control.number);
+  slider.value=number.value=String(control.get());
+  for(const el of [slider,number]){
+    el.addEventListener("input",()=>{
+      if(el.value.trim()!=="") updateBrightness(control.id,el.value);
+    });
+    el.addEventListener("change",()=>{
+      updateBrightness(control.id,el.value); scheduleBrightness(true);
+    });
+  }
 });
 
 /* 白平衡校准 */
@@ -2142,16 +2225,15 @@ $("gDot").addEventListener("change", ()=>{ GAIN_DOT=$("gDot").checked;
   localStorage.setItem("yogo_gaindot", GAIN_DOT?"1":"0"); repaintNow(); });
 syncGain();
 
-/* 只亮点阵屏 */
+/* 熄灯快捷键与键盘亮度共用同一状态，不改变点阵屏亮度。 */
 function syncKbOff(){
-  $("kbOff").textContent = KB_OFF ? "点亮键盘灯" : "熄灭键盘灯";
-  $("kbOff").classList.toggle("primary", KB_OFF);
+  const off=KB_BRIGHT===0;
+  $("kbOff").textContent=off ? "点亮键盘灯" : "熄灭键盘灯";
+  $("kbOff").classList.toggle("primary",off);
 }
-$("kbOff").addEventListener("click", ()=>{
-  KB_OFF=!KB_OFF; localStorage.setItem("yogo_kboff", KB_OFF?"1":"0");
-  syncKbOff();
-  vibeKb=null; vibeSig=null;      // vibe 的脏检查不认识 KB_OFF，得让它忘掉「灯已经推过了」
-  enterStreamMode().then(repaintNow);   // 先把背光模式 0/254 写进固件，再重画
+$("kbOff").addEventListener("click",()=>{
+  updateBrightness("kb",KB_BRIGHT===0 ? LAST_KB_BRIGHT : 0);
+  scheduleBrightness(true);
 });
 syncKbOff();
 
@@ -2726,8 +2808,7 @@ if(MAC_APP) syncMacUI();
 /* 启动 */
 document.querySelectorAll(".mode").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.id===MODE)));
 document.querySelectorAll(".pane").forEach(p=>p.classList.toggle("on",p.dataset.pane===MODE));
-drawPreview(rows2rgb(THEMES[THEME].dot));
-drawKeyboard(THEMES[THEME].kb(0));
+brightnessPreview();
 </script>
 </body>
 </html>

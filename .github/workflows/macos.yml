@@ -25,6 +25,8 @@ jobs:
           python-version: '3.12'
       - name: Verify architecture
         run: test "$(uname -m)" = '${{ matrix.arch }}'
+      - name: Test independent brightness controls
+        run: node tests/brightness.test.cjs
       - name: Build and test
         run: ./build-macos.sh
       - name: Test packaged service
