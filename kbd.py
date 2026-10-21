@@ -18,10 +18,15 @@
 import ctypes
 import ctypes.wintypes as wt
 import os
+import sys
 import threading
 import time
 
-import hidprobe as H
+MACOS = sys.platform == "darwin"
+if MACOS:
+    import hid_macos as H
+else:
+    import hidprobe as H
 import paths
 
 C_HAND, C_READ, C_WRITE, C_SYNCLED, C_ENDSYNC, C_MATRIX = 16, 20, 21, 46, 47, 59
@@ -57,22 +62,23 @@ class LASTINPUTINFO(ctypes.Structure):
     _fields_ = [("cbSize", wt.UINT), ("dwTime", wt.DWORD)]
 
 
-_u32 = ctypes.WinDLL("user32", use_last_error=True)
-_u32.GetLastInputInfo.argtypes = [ctypes.POINTER(LASTINPUTINFO)]
-_u32.GetLastInputInfo.restype = wt.BOOL
-_k32 = ctypes.WinDLL("kernel32", use_last_error=True)
-_k32.GetTickCount64.restype = ctypes.c_ulonglong
-
-
-_u32.OpenInputDesktop.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
-_u32.OpenInputDesktop.restype = wt.HANDLE
-_u32.CloseDesktop.argtypes = [wt.HANDLE]
+if not MACOS:
+    _u32 = ctypes.WinDLL("user32", use_last_error=True)
+    _u32.GetLastInputInfo.argtypes = [ctypes.POINTER(LASTINPUTINFO)]
+    _u32.GetLastInputInfo.restype = wt.BOOL
+    _k32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _k32.GetTickCount64.restype = ctypes.c_ulonglong
+    _u32.OpenInputDesktop.argtypes = [wt.DWORD, wt.BOOL, wt.DWORD]
+    _u32.OpenInputDesktop.restype = wt.HANDLE
+    _u32.CloseDesktop.argtypes = [wt.HANDLE]
 DESKTOP_SWITCHDESKTOP = 0x0100
 
 
 def locked():
     """Windows 锁屏了吗。锁屏时输入桌面切到 Winlogon，普通进程打不开它。
     UAC 弹窗的安全桌面也会让这个调用失败，所以调用方要去抖，别一次就当真。"""
+    if MACOS:
+        return H.locked()
     h = _u32.OpenInputDesktop(0, False, DESKTOP_SWITCHDESKTOP)
     if not h:
         return True
@@ -82,6 +88,8 @@ def locked():
 
 def idle_secs():
     """距上次键盘/鼠标输入多少秒。GetLastInputInfo 给的是 32 位 tick，要自己处理回绕。"""
+    if MACOS:
+        return H.idle_secs()
     li = LASTINPUTINFO()
     li.cbSize = ctypes.sizeof(li)
     if not _u32.GetLastInputInfo(ctypes.byref(li)):
@@ -128,6 +136,8 @@ class Keyboard:
 
     def _try_path(self, path, il, ol):
         """打开一个口并起读线程。成功只代表口开了，不代表键盘醒着。"""
+        if MACOS:
+            return self._try_mac_path(path)
         fh = H.k32.CreateFileW(path, H.GENERIC_READ | H.GENERIC_WRITE,
                                H.FILE_SHARE_READ | H.FILE_SHARE_WRITE, None,
                                H.OPEN_EXISTING, H.FILE_FLAG_OVERLAPPED, None)
@@ -160,6 +170,44 @@ class Keyboard:
             self._idler.start()
         return True
 
+    def _try_mac_path(self, path):
+        try:
+            self.fh = H.Connection(path)
+        except Exception as e:
+            self.err = "打不开 HID 接口：%s。请检查连接，并在系统设置中允许输入监控（如系统要求）。" % e
+            return False
+        self.path = path
+        self.product = self.fh.product
+        wired = "dongle" not in self.product.lower()
+        if wired != self.wired:
+            self._pw, self._pw_t = None, 0.0
+        self.wired = wired
+        self.err = ""
+        self.running = True
+        self.reader = threading.Thread(target=self._read_mac_loop, args=(self.fh,), daemon=True)
+        self.reader.start()
+        if self._idler is None or not self._idler.is_alive():
+            self._idler = threading.Thread(target=self._idle_loop, daemon=True)
+            self._idler.start()
+        return True
+
+    def _read_mac_loop(self, connection):
+        try:
+            while self.running and self.fh is connection:
+                data = connection.read()
+                if not data:
+                    time.sleep(0.002)  # give writers a chance between bounded reads
+                if len(data) >= 7:
+                    slot = self.pending.get(data[6])
+                    if slot:
+                        slot[1] = data
+                        slot[0].set()
+        except (OSError, ValueError) as e:
+            self.err = "读取 HID 失败：%s（设备已断开？）" % e
+        finally:
+            if self.fh is connection:
+                self.close()
+
     def ping(self):
         """握手 + 读一小段配置，只试一次。用来分辨哪个口后面真挂着键盘。"""
         try:
@@ -169,6 +217,10 @@ class Keyboard:
             return False
 
     def open(self):
+        with self.lock:
+            return self._open_locked()
+
+    def _open_locked(self):
         """挑出后面真的挂着键盘的那个 FF60/61 口。
 
         有线和 2.4G 会各出一个 FF60/61，长得一模一样，但只有一个后面有键盘。
@@ -209,6 +261,11 @@ class Keyboard:
     def close(self):
         self.running = False
         fh, self.fh = self.fh, None
+        if MACOS:
+            if fh is not None:
+                fh.close()
+            self.awake = False
+            return
         if fh is not None:
             try:
                 H.k32.CancelIoEx(fh, None)
@@ -254,6 +311,12 @@ class Keyboard:
 
     # ── 发 ──────────────────────────────────────────────────────────
     def _write(self, pkt):
+        if MACOS:
+            try:
+                return self.fh.write(pkt)
+            except (OSError, ValueError) as e:
+                self.err = "HID 写入失败：%s" % e
+                return False
         buf = (ctypes.c_ubyte * self.out_len)()
         for i, b in enumerate(pkt[:self.out_len]):
             buf[i] = b
@@ -292,7 +355,7 @@ class Keyboard:
                 self.pending[my] = slot
             try:
                 if not self._write(pkt):
-                    self.err = "写不出去（err %d）" % ctypes.get_last_error()
+                    self.err = (self.err or "HID 写入失败") if MACOS else "写不出去（err %d）" % ctypes.get_last_error()
                     self.close()
                     raise IOError(self.err)
                 if not wait:

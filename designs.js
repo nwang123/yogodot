@@ -38,4 +38,6 @@ const DESIGNS = {
   wave:     ['......', '.c..c.', 'c.cc.c', '......', '.b..b.', 'b.bb.b'],
 };
 
-module.exports = { PALETTE, DESIGNS };
+const extra = require('./patterns.js');
+const EXTRA_PALETTE = {A:[125,228,248], G:[115,238,125], n:[118,52,32], s:[62,62,74]};
+module.exports = { PALETTE:{...PALETTE, ...EXTRA_PALETTE}, DESIGNS:{...DESIGNS, ...extra.designs} };

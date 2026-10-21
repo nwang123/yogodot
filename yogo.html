@@ -36,6 +36,7 @@
   .batt.low{color:var(--bad)}
   .batt.mid{color:var(--accent)}
   .batt.chg{color:var(--ok)}
+  [hidden]{display:none!important}
   .batt[hidden]{display:none}
   .mode[hidden],#claudeOnly[hidden]{display:none}
   button{font-family:var(--ui);cursor:pointer}
@@ -382,8 +383,10 @@
   </div>
 </div>
 
+<script src="patterns.js"></script>
 <script>
 "use strict";
+const MAC_APP = /Macintosh|Mac OS X/.test(navigator.userAgent);
 /* ═══════════════ 协议层 ═══════════════
    32 字节输出报文, reportId 0:
      [0]=0xAA [1]=cmd [2..3]=offset(LE) [4]=len [5]=seq [6..7]=0 [8..31]=payload
@@ -672,6 +675,7 @@ setInterval(()=>{ const dt=(performance.now()-fpsT0)/1000;
 
 /* ═══════════════ 图案 / 主题 / 动画 ═══════════════ */
 const STATICS={
+  ...YOGO_PATTERNS.designs,
   tomato:["..gg..",".rrrr.","rrrrrr","rrrrrr",".rrrr.","..rr.."],
   heart:["rr..rr","rrrrrr","rrrrrr",".rrrr.","..rr..","......"],
   pikachu:[".y..y.","yyyyyy","y.yy.y","ryyyyr","yy..yy",".yyyy."],
@@ -728,6 +732,7 @@ const STATICS={
 };
 /* 图库分组 —— 平铺一大片找不到东西 */
 const GALLERY={
+  ...Object.fromEntries(Object.entries(YOGO_PATTERNS.groups).map(([name, designs])=>[name, Object.keys(designs)])),
   "角色 / 符号":["pikachu","cat","ghost","invader","skull","moon","bolt","heart","prompt","coffee","wave","tomato"],
   "蔬菜":["carrot","broccoli","eggplant","corn","chili","pumpkin","pea"],
   "水果":["apple","banana","berry","grape","orange","melon","pineapp","cherry","lemon"],
@@ -1762,6 +1767,7 @@ let LAST_RESIDENT=localStorage.getItem("yogo_resident")||"theme";   // 专注/�
    状态存在服务端 settings.json，托盘程序也照它决定胶囊要不要理中键。 */
 let CLAUDE_ON=false;
 function syncClaudeUI(){
+  if(MAC_APP) syncMacUI();
   const b=$("claudeOn");
   if(b){ b.textContent = CLAUDE_ON ? "开" : "关"; b.classList.toggle("primary", CLAUDE_ON); }
   const box=$("claudeOnly"); if(box) box.hidden=!CLAUDE_ON;
@@ -1995,7 +2001,7 @@ Object.keys(GALLERY).forEach((cat,ci)=>{
   const grid=document.createElement("div"); grid.className="chips"; grid.style.marginTop="9px";
   d.appendChild(grid);
   GALLERY[cat].forEach(n=>{ if(!STATICS[n]) return;
-    chip(grid, thumbOf(rows2rgb(STATICS[n])), n, ()=>{ showArt(n); }, "art:"+n); });
+    chip(grid, thumbOf(rows2rgb(STATICS[n])), YOGO_PATTERNS.names[n] || n, ()=>{ showArt(n); }, "art:"+n); });
   $("statics").appendChild(d);
 });
 renderDotOwner();
@@ -2557,7 +2563,7 @@ function applySnapshot(snap){
   vibePaint();
 }
 function syncAlert(){
-  $("vAlert").textContent = "有事弹胶囊：" + (ALERT_ON ? "开" : "关");
+  $("vAlert").textContent = (MAC_APP ? "有事打开控制台：" : "有事弹胶囊：") + (ALERT_ON ? "开" : "关");
   $("vAlert").classList.toggle("primary", ALERT_ON);
   try{ renderDotOwner(); }catch(e){}
 }
@@ -2695,6 +2701,27 @@ setInterval(()=>{
       })}).catch(()=>{});
   }catch(e){}
 }, 1500);
+
+/* macOS uses a menu bar app; reminders reopen the native control window. */
+function syncMacUI(){
+  document.title="YogoDot · macOS";
+  for(const id of ["capSkin","capAnim","capPet","capHold"]){
+    const control=$(id); if(control) control.closest(".row").hidden=true;
+  }
+  const box=$("claudeOnly");
+  if(box){
+    const heading=box.querySelector("b"); if(heading) heading.textContent="状态与额度";
+  }
+  // Match macOS wording everywhere, including labels refreshed by older loops.
+  const walker=document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+  let node;
+  while((node=walker.nextNode())){
+    if(node.parentElement.closest("script,style")) continue;
+    node.textContent=node.textContent.replace(/顶部胶囊/g,"控制台提醒").replace(/弹胶囊/g,"打开控制台")
+      .replace(/HUD 胶囊/g,"控制台").replace(/胶囊/g,"控制台");
+  }
+}
+if(MAC_APP) syncMacUI();
 
 /* 启动 */
 document.querySelectorAll(".mode").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.id===MODE)));

@@ -458,6 +458,8 @@ class Hook(Base):
 # 从无控制台的父进程（pythonw）起控制台程序，Windows 会给它开一个黑框。
 # 所有子进程一律带上这组参数，开机就不会弹出一堆 cmd 窗口。
 def quiet():
+    if os.name != "nt":
+        return dict(stdin=subprocess.DEVNULL)
     si = subprocess.STARTUPINFO()
     si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     si.wShowWindow = 0                           # SW_HIDE

@@ -13,7 +13,14 @@ art/*
 preview_*.png
 
 # 打包产物
-.buildenv/
+.buildenv*/
 build/
 dist/
 *.spec.bak
+
+# macOS / local verification
+.DS_Store
+.venv/
+.test-data/
+*.zip
+*.app/

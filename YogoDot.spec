@@ -14,6 +14,7 @@ a = Analysis(
     datas=[
         ('yogo.html', '.'),
         ('designs.js', '.'),
+        ('patterns.js', '.'),
         ('yogo.ico', '.'),
         ('fonts', 'fonts'),
         ('art', 'art'),

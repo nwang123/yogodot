@@ -35,8 +35,13 @@ def _writable(d):
         return False
 
 
-DATA = _exe_dir if _writable(_exe_dir) else os.path.join(
-    os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "YogoDot")
+if os.environ.get("YOGO_DATA_DIR"):
+    DATA = os.path.abspath(os.path.expanduser(os.environ["YOGO_DATA_DIR"]))
+elif sys.platform == "darwin":
+    DATA = os.path.expanduser("~/Library/Application Support/YogoDot")
+else:
+    DATA = _exe_dir if _writable(_exe_dir) else os.path.join(
+        os.environ.get("LOCALAPPDATA") or os.path.expanduser("~"), "YogoDot")
 os.makedirs(DATA, exist_ok=True)
 
 
